@@ -1,5 +1,5 @@
 setwd("GSE121248") 
-
+rm(list = ls())
 install.packages("tidyverse")
 install.packages("BiocManager")
 chooseBioCmirror()
