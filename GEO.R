@@ -1,23 +1,32 @@
-setwd("GSE121248") 
+setwd("GSE32676") 
 rm(list = ls())
 install.packages("tidyverse")
 install.packages("BiocManager")
 chooseBioCmirror()
 BiocManager::install('GEOquery')
 library(tidyverse)
-library(GEOquery)
-
-gset = getGEO('GSE121248', destdir = ".", AnnotGPL = F, getGPL = F)
+library(stringr)
+#### 获取数据集 ####
+gset = getGEO('GSE32676', destdir = ".", AnnotGPL = F, getGPL = F)
 
 #通过pData函数获取分组信息
 pdata <- pData(gset[[1]])
-library(stringr)
 #设置参考水平
-group_list <- ifelse(str_detect(pdata$source_name_ch1, "Tumor sample"), "tumor", "normal")
+group_list <- ifelse(str_detect(pdata$source_name_ch1, "tumor"), "tumor", "normal")
+group_list
 group_list <- factor(group_list, levels = c("normal", "tumor"))
 # 通过exprs函数获取表达矩阵并矫正
 exp <- exprs(gset[[1]])
 boxplot(exp, outline=FALSE, notch=T, col=group_list, las=2)
+#### 矫正 ####
+library(limma)
+exp = normalizeBetweenArrays(exp)
+#什么时候考虑批次效应
+#exp = removeBatchEffect() 
+boxplot(exp, outline=FALSE, notch=T, col=group_list, las=2)
+#range(exp) 
+#一般而言，范围在20以内的表达值基本已经经过了log对数转换
+#exp <- log2(exp+1)
 #### PCA图 ####
 dat = as.data.frame(t(exp))
 install.packages("FactoMineR")
@@ -29,19 +38,10 @@ pca_plot <- fviz_pca_ind(dat.pac,
                          geom.ind = "point",
                          col.ind = group_list,
                          palette = c("green", "red"),
-                         addEllipses = TRUE,
+                         addEllipses = FALSE,
                          legend.title = "Groups"
 )
 pca_plot
-#### 矫正 ####
-library(limma)
-exp = normalizeBetweenArrays(exp)
-#什么时候考虑批次效应
-#exp = removeBatchEffect() 
-boxplot(exp, outline=FALSE, notch=T, col=group_list, las=2)
-#range(exp) 
-#一般而言，范围在20以内的表达值基本已经经过了log对数转换
-#exp <- log2(exp+1)
 
 #### 使用R包转换id ####
 index = gset[[1]]@annotation # 查看基因测序的平台
@@ -56,7 +56,7 @@ exp <- exp %>% mutate(probe_id=rownames(exp))
 exp <- exp %>% inner_join(ids, by="probe_id")
 exp <- exp[!duplicated(exp$symbol),] #去重
 rownames(exp) <- exp$symbol
-exp <- exp[, -(108:109)]
+exp <- exp[, -(33:34)]
 write.table(exp, file = "exp.txt", sep = "\t", row.names = T, col.names = NA, quote = F)
 #### 差异分析 ####
 exp <- read.table("exp.txt", sep = "\t", row.names = 1, check.names = F, stringsAsFactors = F, header = T)
@@ -73,15 +73,6 @@ k1 = (deg$adj.P.Val < P.value)&(deg$logFC < -logFC)
 k2 = (deg$adj.P.Val < P.value)&(deg$logFC > logFC)
 deg$change = ifelse(k1,"down",ifelse(k2,"up","stable"))
 table(deg$change)
-
-
-
-
-
-
-
-
-
 
 ####火山图 ####
 install.packages("ggpubr")
