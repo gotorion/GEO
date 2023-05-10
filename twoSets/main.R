@@ -1,4 +1,5 @@
 setwd("twoSets")
+#### install packages ####
 install.packages("tidyverse")
 install.packages("BiocManager")
 chooseBioCmirror()
@@ -9,6 +10,7 @@ install_github("jmzeng1314/idmap2")
 install_github("jmzeng1314/idmap3")
 install_github("jmzeng1314/AnnoProbe")
 BiocManager::install("hugene10sttranscriptcluster.db")#GPL6244
+#### library ####
 library(hugene10sttranscriptcluster.db)
 library(tidyverse)
 library(GEOquery)
@@ -20,6 +22,7 @@ library(idmap3)
 library(AnnoProbe)
 library(limma)
 library(stringr)
+library(GOplot)
 rm(list = ls())
 
 #### 获取数据集 ####
@@ -140,10 +143,9 @@ boxplot(expr_limma, col=col, las=2)
 par(mfrow = c(1, 2))
 boxplot(eset_merge, col = col, las = 2, main = "before")
 boxplot(expr_limma, col = col, las = 2, main = "after")
-
 dev.off()
 
-expr_limma <- normalizeBetweenArrays(expr_limma)
+#expr_limma <- normalizeBetweenArrays(expr_limma)
 #### PCA ####
 dat = as.data.frame(t(expr_limma))
 install.packages("FactoMineR")
@@ -154,14 +156,14 @@ dat.pca <- PCA(dat, graph = FALSE)
 pca_plot <- fviz_pca_ind(dat.pca,
                          geom.ind = "point",
                          col.ind = group_list,
-                         palette = c("blue", "red"),
-                         addEllipses = FALSE,
-                         legend.title = "Groups"
+                         palette = c("#00AFBB", "#FC4E07"),
+                         addEllipses = TRUE,
+                         legend.title = "Groups",
+                         title = "PCA - Biplot"
 )
 pca_plot
-
+dev.off()
 #### 差异分析 ####
-library(limma) #GEO都是用limma包
 design = model.matrix(~group_list)
 fit = lmFit(expr_limma,design)
 fit = eBayes(fit)
@@ -177,47 +179,55 @@ table(deg$change)
 my_deg <- deg %>% filter(deg$change != "stable")
 head(my_deg)
 write.table(my_deg, file = "my_deg.csv", sep = "\t", row.names = T, col.names = NA, quote = F)
+
 ####火山图 ####
+head(deg)
 install.packages("ggpubr")
 install.packages("ggthemes")
+install.packages("ggrepel")
 library(ggpubr)
 library(ggthemes)
-deg$logP <- -log10(deg$adj.P.Val)
-ggscatter(deg, x = "logFC", y = "logP",
-          color = "change",
-          palette = c("blue", "black", "red"),
-          size = 1) + 
-  theme_base() +
-  geom_hline(yintercept = -log10(P.value), linetype = "dashed") +
-  geom_vline(xintercept = c(-logFC, logFC), linetype = "dashed")
-#### 热图 ####
-cg = rownames(deg)[deg$change != "stable"]
-diff = expr_limma[cg, ]
-install.packages("pheatmap")
-library(pheatmap)
-anntation_col = data.frame(group=group_list)
-rownames(anntation_col) = colnames(diff)
-pheatmap(diff,
-         anntation_col = anntation_col,
-         scale = "row",
-         show_rownames = F,
-         show_colnames = F,
-         color = colorRampPalette(c("navy", "white", "red"))(50),
-         fontsize = 10,
-         fontsize_row = 3,
-         fontsize_col = 3
+library(ggrepel)
+install.packages("readxl")
+library(readxl)
+
+this_tile <- paste0('Volcano plot',
+                    '\nCutoff for LogFC is ',round(logFC,3),
+                    '\nThe number of up genes is ',nrow(demo[demo$change =='up',]) ,
+                    '\nThe number of down genes is ',nrow(demo[demo$change =='down',])
 )
+demo <- read_excel("demo.xlsx")
+demo$label <- ifelse(demo$adj.P.Val< 0.0005& abs(demo$logFC) >= 2.5,demo$gene,"")
+volcano_map <- ggplot(demo, aes(x=logFC, y=-log10(adj.P.Val),color=change)) + 
+  geom_point(alpha=0.4, size=2) + 
+  theme_bw(base_size = 12) + 
+  xlab("Log2(Fold change)") +
+  ylab("-Log10(P.adj)") +
+  theme(plot.title = element_text(size=13,hjust = 0.5),
+        legend.position = "bottom") + 
+  scale_colour_manual(values = c('steelblue','gray','brown')) +
+  geom_hline(yintercept = -log10(0.05), lty = 4) +
+  geom_vline(xintercept = c(-logFC, logFC), lty = 4)+
+  labs(title = this_tile)+
+  geom_label_repel(data = demo, aes(label = label),
+                   size = 3,box.padding = unit(0.5, "lines"),
+                   point.padding = unit(0.8, "lines"),
+                   segment.color = "black",
+                   show.legend = FALSE, max.overlaps = 10000)
+volcano_map
 
 #### Go 富集分析 ####
 BiocManager::install("clusterProfiler")
 BiocManager::install("org.Hs.eg.db")
+BiocManager::install("GOplot")#绘图
 library(clusterProfiler)
 library(org.Hs.eg.db)
+library(GOplot)
 deg <- read.table("deg_all.csv", sep = "\t", row.names = 1, check.names = F, stringsAsFactors = F, header = T)
 
-deg <- deg %>% filter(change != "stable")
-table(deg$change)
-DEG <- deg
+deg_GO <- deg %>% filter(change != "stable")
+table(deg_GO$change)
+DEG <- deg_GO
 DEG <- DEG %>% rownames_to_column("Gene")
 
 genelist <- bitr(DEG$Gene, fromType = "SYMBOL",
@@ -233,12 +243,28 @@ ego <- enrichGO(gene = DEG$ENTREZID,
                 qvalueCutoff = 0.05,
                 readable = TRUE)
 ego_res <- ego@result
+#弦图
+#write.table(ego_res, file = "go_result.csv", sep = "\t", row.names = T, col.names = NA, quote = F)
+#write.table(DEG, file = "differential_expr", sep = "\t", row.names = T, col.names = NA, quote = F)
+install.packages("RColorBrewer")
+library(RColorBrewer)
+df1 <- read.table("go_result.csv", header = T, sep = ",", stringsAsFactors = F)
+df2 <- read.csv("differential_expr.csv", header = T, stringsAsFactors = F)
+circ <- circle_dat(df1, df2)
+df3 <- read.csv("genes.csv", header = T, stringsAsFactors = F)
+df4 <- read.csv("process.csv", header = T, stringsAsFactors = F)
+chord <- chord_dat(circ, df3, df4$MF)
+GOChord(chord,   #chord对象
+        title = "GO-Mollecular Function",
+        limit = c(2, 0),
+        ribbon.col = brewer.pal(8,"Set2"),
+        space = 0.02,  #右侧色块之间的间距
+        gene.order = 'logFC',   #基因展示顺序根据logFC来
+        gene.space = 0.25,  #基因名字和色块之间的距离
+        gene.size = 4  #基因名字大小
+)
+dev.off()
 
-barplot(ego, color = "pvalue")
-dotplot(ego)
-
-barplot(ego, drop = TRUE, showCategory = 8, split = "ONTOLOGY") +
-  facet_grid(ONTOLOGY~., scales = 'free')
 #### KEGG富集分析 ####
 kk <- enrichKEGG(gene = DEG$ENTREZID,
                  organism = 'hsa', #Human sapiens
@@ -247,3 +273,238 @@ kk <- enrichKEGG(gene = DEG$ENTREZID,
 kk_res <- kk@result
 
 dotplot(kk)
+#### 共表达分析 ####
+BiocManager::install("preprocessCore")
+BiocManager::install("impute")
+install.packages("WGCNA")
+library("tidyverse")
+library("WGCNA")            
+if(!require(DESeq2))BiocManager::install('DESeq2')
+library(DESeq2)
+input <- expr_limma[rownames(my_deg),]
+###保证样本在行，基因在列 很重要！！！！
+datExpr0 = as.data.frame(t(input))
+##开始WGCNA
+#检查缺失值
+gsg = goodSamplesGenes(datExpr0, verbose = 3)
+gsg$allOK
+###如果没有达标就需要筛选
+if (!gsg$allOK){
+  # Optionally, print the gene and sample names that were removed:
+  if (sum(!gsg$goodGenes)>0) 
+    printFlush(paste("Removing genes:", paste(names(datExpr0)[!gsg$goodGenes], collapse = ", ")));
+  if (sum(!gsg$goodSamples)>0) 
+    printFlush(paste("Removing samples:", paste(rownames(datExpr0)[!gsg$goodSamples], collapse = ", ")));
+  # Remove the offending genes and samples from the data:
+  datExpr0 = datExpr0[gsg$goodSamples, gsg$goodGenes]
+}
+# 样品聚类
+# 聚类
+sampleTree = hclust(dist(datExpr0), method = "average")
+# 画图
+par(cex = 0.6)
+par(mar = c(0,4,2,0))
+plot(sampleTree)
+plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5, cex.axis = 1.5, cex.main = 2)
+###剪切线，是否需要剪切？
+abline(h = 67, col = "red")
+###删除剪切线以下的样品
+clust = cutreeStatic(sampleTree, cutHeight = 67, minSize = 10)
+table(clust)
+keepSamples = (clust==1)
+datExpr0 = datExpr0[keepSamples, ]
+dev.off()
+# 重新聚类
+sampleTree2 = hclust(dist(datExpr0), method = "average")
+plot(sampleTree2)
+
+# 记录基因和样本数，方便后续可视化
+nGenes = ncol(datExpr0)#基因数
+nSamples = nrow(datExpr0)#样本数
+save(datExpr0, nGenes, nSamples,file = "Step01-WGCNA_input.Rda")
+
+# 构建网络，识别模块
+# power值散点图
+enableWGCNAThreads()   #多线程工作
+powers = c(1:20)       #幂指数范围1:20
+sft = pickSoftThreshold(datExpr0, powerVector = powers, verbose = 5)
+
+par(mfrow = c(1,2))
+cex1 = 0.9
+###拟合指数与power值散点图
+plot(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     xlab="Soft Threshold (power)",ylab="Scale Free Topology Model Fit,signed R^2",type="n",
+     main = paste("Scale independence"));
+text(sft$fitIndices[,1], -sign(sft$fitIndices[,3])*sft$fitIndices[,2],
+     labels=powers,cex=cex1,col="red");
+abline(h=0.90,col="red") #可以修改
+###平均连通性与power值散点图
+plot(sft$fitIndices[,1], sft$fitIndices[,5],
+     xlab="Soft Threshold (power)",ylab="Mean Connectivity", type="n",
+     main = paste("Mean connectivity"))
+text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
+
+##6.2 邻接矩阵转换
+sft #查看最佳power值
+softPower =sft$powerEstimate #最佳power值
+softPower = 1
+adjacency = adjacency(datExpr0, power = softPower)
+
+##6.3 TOM矩阵
+TOM = TOMsimilarity(adjacency)
+dissTOM = 1-TOM
+save(TOM,file = "TOM.Rda")
+
+# 基因聚类
+geneTree = hclust(as.dist(dissTOM), method = "average");
+plot(geneTree, xlab="", sub="", main = "Gene clustering on TOM-based dissimilarity",
+     labels = FALSE, hang = 0.04)
+
+# 动态剪切模块识别
+minModuleSize = 30      #模块基因数目
+dynamicMods = cutreeDynamic(dendro = geneTree, distM = dissTOM,
+                            deepSplit = 2, pamRespectsDendro = FALSE,
+                            minClusterSize = minModuleSize);
+table(dynamicMods)
+
+dynamicColors = labels2colors(dynamicMods)
+table(dynamicColors)
+
+plotDendroAndColors(geneTree, dynamicColors, "Dynamic Tree Cut",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05,
+                    main = "Gene dendrogram and module colors")
+
+# 相似模块聚类
+MEList = moduleEigengenes(datExpr0, colors = dynamicColors)
+MEs = MEList$eigengenes
+MEDiss = 1-cor(MEs);
+METree = hclust(as.dist(MEDiss), method = "average")
+plot(METree, main = "Clustering of module eigengenes",
+     xlab = "", sub = "")
+
+#MEDissThres = 0.1 #剪切高度可修改
+#abline(h=MEDissThres, col = "red")
+
+###相似模块合并
+merge = mergeCloseModules(datExpr0, dynamicColors, cutHeight = MEDissThres, verbose = 3)
+mergedColors = merge$colors
+mergedMEs = merge$newMEs
+plotDendroAndColors(geneTree, mergedColors,"Dynamic Tree Cut",
+                    dendroLabels = FALSE, hang = 0.03,
+                    addGuide = TRUE, guideHang = 0.05,
+                    main = "Gene dendrogram and module colors")
+
+moduleColors = mergedColors
+table(moduleColors)
+colorOrder = c("grey", standardColors(50))
+moduleLabels = match(moduleColors, colorOrder)-1
+MEs = mergedMEs
+dev.off()
+# 整理临床信息
+clinical <- read.table("LIHC_fpkm_mRNA_01A_estimate_score.txt",sep = "\t",row.names = 1,check.names = F,stringsAsFactors = F,header = T)
+clinical <- clinical[rownames(datExpr0),]
+identical(rownames(clinical),rownames(datExpr0))
+# 查看临床信息
+head(clinical)
+# 对表达矩阵进行预处理
+datTraits = as.data.frame(do.call(cbind,lapply(clinical, as.numeric)))
+rownames(datTraits) = rownames(clinical)
+
+# 对样本进行聚类
+sampleTree2 = hclust(dist(datExpr0), method = "average")
+
+# 将临床信息转换为颜色，白色表示低，红色表示高，灰色表示缺失
+traitColors = numbers2colors(datTraits, signed = FALSE)
+
+# 样本聚类图与样本性状热图
+plotDendroAndColors(sampleTree2, 
+                    traitColors,
+                    groupLabels = names(datTraits), 
+                    main = "Sample dendrogram and trait heatmap")
+dev.off()
+
+#### 网络的分析
+# 对模块特征矩阵进行排序
+MEs=orderMEs(MEs)
+#计算模型特征矩阵和样本信息矩阵的相关度。
+moduleTraitCor=cor(MEs, datTraits, use="p")
+write.table(file="Step04-modPhysiological.cor.xls",moduleTraitCor,sep="\t",quote=F)
+moduleTraitPvalue=corPvalueStudent(moduleTraitCor, nSamples)
+write.table(file="Step04-modPhysiological.p.xls",moduleTraitPvalue,sep="\t",quote=F)
+
+#使用labeledHeatmap()将上述相关矩阵和p值可视化。
+textMatrix=paste(signif(moduleTraitCor,2),"\n(",signif(moduleTraitPvalue,1),")",sep="")
+dim(textMatrix)=dim(moduleTraitCor)
+# 基因模块与临床信息相关性图
+labeledHeatmap(Matrix=moduleTraitCor,#模块和表型的相关性矩阵，这个参数最重要，其他可以不变
+               xLabels=colnames(datTraits),
+               yLabels=names(MEs),
+               ySymbols=names(MEs),
+               colorLabels=FALSE,
+               colors=blueWhiteRed(50),
+               textMatrix=textMatrix,
+               setStdMargins=FALSE,
+               cex.text=0.7,
+               cex.lab=0.7,
+               zlim=c(-1,1),
+               main=paste("Module-trait relationships"))
+dev.off()
+
+# 不同模块与基因性状的具体分析
+##矩阵一
+modNames = substring(names(MEs), 3)
+geneModuleMembership = as.data.frame(cor(datExpr0, MEs, use = "p"))
+####看一下目的基因和哪个模块相关性最高
+a <- geneModuleMembership
+a <- a %>% rownames_to_column()
+
+MMPvalue = as.data.frame(corPvalueStudent(as.matrix(geneModuleMembership), nSamples))
+names(geneModuleMembership) = paste("MM", modNames, sep="")
+names(MMPvalue) = paste("p.MM", modNames, sep="")
+
+##矩阵二
+traitNames=names(datTraits)
+geneTraitSignificance = as.data.frame(cor(datExpr0, datTraits, use = "p"))
+GSPvalue = as.data.frame(corPvalueStudent(as.matrix(geneTraitSignificance), nSamples))
+names(geneTraitSignificance) = paste("GS.", traitNames, sep="")
+names(GSPvalue) = paste("p.GS.", traitNames, sep="")
+
+##批量输出性状和模块散点图
+for (trait in traitNames){
+  traitColumn=match(trait,traitNames)  
+  for (module in modNames){
+    column = match(module, modNames)
+    moduleGenes = moduleColors==module
+    if (nrow(geneModuleMembership[moduleGenes,]) > 1){
+      outPdf=paste(trait, "_", module,".pdf",sep="")
+      pdf(file=outPdf,width=7,height=7)
+      par(mfrow = c(1,1))
+      verboseScatterplot(abs(geneModuleMembership[moduleGenes, column]),
+                         abs(geneTraitSignificance[moduleGenes, traitColumn]),
+                         xlab = paste("Module Membership in", module, "module"),
+                         ylab = paste("Gene significance for ",trait),
+                         main = paste("Module membership vs. gene significance\n"),
+                         cex.main = 1.2, cex.lab = 1.2, cex.axis = 1.2, col = module)
+      abline(v=0.8,h=0.5,col="red")
+      dev.off()
+    }
+  }
+}
+
+#10. 输出每个模块的基因
+for (mod in 1:nrow(table(moduleColors)))
+{  
+  modules = names(table(moduleColors))[mod]
+  probes = colnames(datExpr0)
+  inModule = (moduleColors == modules)
+  modGenes = probes[inModule]
+  write.table(modGenes, file =paste0(modules,".txt"),sep="\t",row.names=F,col.names=F,quote=F)
+}
+
+
+
+
+
+
+
