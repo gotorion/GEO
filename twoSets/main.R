@@ -11,6 +11,7 @@ install_github("jmzeng1314/idmap3")
 install_github("jmzeng1314/AnnoProbe")
 BiocManager::install("hugene10sttranscriptcluster.db")#GPL6244
 #### library ####
+library(BiocManager)
 library(hugene10sttranscriptcluster.db)
 library(tidyverse)
 library(GEOquery)
@@ -45,25 +46,24 @@ exp4 <- log2(exp4+1)
 range(exp4)
 
 table(rownames(exp1) %in% rownames(exp2)) 
-length(intersect(rownames(exp1), rownames(exp2)))
 boxplot(exp1, outline=F, notch=F, las=2, col='blue')
-boxplot(exp2, outline=F, notch=F, las=2, col='red')
+boxplot(exp2)
 boxplot(exp3)
 dev.off()
 #如果数据不均一
-exp1 <- normalizeBetweenArrays(exp1)
-exp2 <- normalizeBetweenArrays(exp2)
-exp3 <- normalizeBetweenArrays(exp3)
-exp4 <- normalizeBetweenArrays(exp4)
+#exp1 <- normalizeBetweenArrays(exp1)
+#exp2 <- normalizeBetweenArrays(exp2)
+#exp3 <- normalizeBetweenArrays(exp3)
+#exp4 <- normalizeBetweenArrays(exp4)
 #### 提取临床信息 ####
 pd1 <- pData(eset1[[1]])
 pd2 <- pData(eset2[[1]])
 pd3 <- pData(eset3[[1]])
 pd4 <- pData(eset4[[1]])
-index1 <- eset1[[1]]@annotation
-index2 <- eset2[[1]]@annotation
-index3 <- eset3[[1]]@annotation
-index4 <- eset4[[1]]@annotation
+#index1 <- eset1[[1]]@annotation
+#index2 <- eset2[[1]]@annotation
+#index3 <- eset3[[1]]@annotation
+#index4 <- eset4[[1]]@annotation
 #### exp1 ID转换 ####
 #ids <- toTable(hugene10sttranscriptclusterSYMBOL)
 ids = getIDs('gpl6244')
@@ -145,6 +145,8 @@ boxplot(eset_merge, col = col, las = 2, main = "before")
 boxplot(expr_limma, col = col, las = 2, main = "after")
 dev.off()
 
+write.table(expr_limma, file = "expr_limma.csv", sep = "\t", row.names = T, col.names = NA, quote = F)
+
 #expr_limma <- normalizeBetweenArrays(expr_limma)
 #### PCA ####
 dat = as.data.frame(t(expr_limma))
@@ -185,18 +187,18 @@ head(deg)
 install.packages("ggpubr")
 install.packages("ggthemes")
 install.packages("ggrepel")
+install.packages("readxl")
 library(ggpubr)
 library(ggthemes)
 library(ggrepel)
-install.packages("readxl")
 library(readxl)
 
+demo <- read_excel("demo.xlsx")
 this_tile <- paste0('Volcano plot',
                     '\nCutoff for LogFC is ',round(logFC,3),
                     '\nThe number of up genes is ',nrow(demo[demo$change =='up',]) ,
                     '\nThe number of down genes is ',nrow(demo[demo$change =='down',])
 )
-demo <- read_excel("demo.xlsx")
 demo$label <- ifelse(demo$adj.P.Val< 0.0005& abs(demo$logFC) >= 2.5,demo$gene,"")
 volcano_map <- ggplot(demo, aes(x=logFC, y=-log10(adj.P.Val),color=change)) + 
   geom_point(alpha=0.4, size=2) + 
@@ -215,7 +217,7 @@ volcano_map <- ggplot(demo, aes(x=logFC, y=-log10(adj.P.Val),color=change)) +
                    segment.color = "black",
                    show.legend = FALSE, max.overlaps = 10000)
 volcano_map
-
+dev.off()
 #### Go 富集分析 ####
 BiocManager::install("clusterProfiler")
 BiocManager::install("org.Hs.eg.db")
@@ -223,7 +225,7 @@ BiocManager::install("GOplot")#绘图
 library(clusterProfiler)
 library(org.Hs.eg.db)
 library(GOplot)
-deg <- read.table("deg_all.csv", sep = "\t", row.names = 1, check.names = F, stringsAsFactors = F, header = T)
+#deg <- read.table("deg_all.csv", sep = "\t", row.names = 1, check.names = F, stringsAsFactors = F, header = T)
 
 deg_GO <- deg %>% filter(change != "stable")
 table(deg_GO$change)
@@ -253,9 +255,9 @@ df2 <- read.csv("differential_expr.csv", header = T, stringsAsFactors = F)
 circ <- circle_dat(df1, df2)
 df3 <- read.csv("genes.csv", header = T, stringsAsFactors = F)
 df4 <- read.csv("process.csv", header = T, stringsAsFactors = F)
-chord <- chord_dat(circ, df3, df4$MF)
+chord <- chord_dat(circ, df3, df4$BP)
 GOChord(chord,   #chord对象
-        title = "GO-Mollecular Function",
+        title = "GO-Biological Process",
         limit = c(2, 0),
         ribbon.col = brewer.pal(8,"Set2"),
         space = 0.02,  #右侧色块之间的间距
@@ -271,8 +273,9 @@ kk <- enrichKEGG(gene = DEG$ENTREZID,
                  pvalueCutoff = 0.1,
                  qvalueCutoff = 0.1)
 kk_res <- kk@result
-
 dotplot(kk)
+
+
 #### 共表达分析 ####
 BiocManager::install("preprocessCore")
 BiocManager::install("impute")
@@ -304,7 +307,6 @@ sampleTree = hclust(dist(datExpr0), method = "average")
 # 画图
 par(cex = 0.6)
 par(mar = c(0,4,2,0))
-plot(sampleTree)
 plot(sampleTree, main = "Sample clustering to detect outliers", sub="", xlab="", cex.lab = 1.5, cex.axis = 1.5, cex.main = 2)
 ###剪切线，是否需要剪切？
 abline(h = 67, col = "red")
@@ -314,7 +316,7 @@ table(clust)
 keepSamples = (clust==1)
 datExpr0 = datExpr0[keepSamples, ]
 dev.off()
-# 重新聚类
+# 剪切完重新聚类
 sampleTree2 = hclust(dist(datExpr0), method = "average")
 plot(sampleTree2)
 
@@ -387,20 +389,47 @@ plot(METree, main = "Clustering of module eigengenes",
 #abline(h=MEDissThres, col = "red")
 
 ###相似模块合并
-merge = mergeCloseModules(datExpr0, dynamicColors, cutHeight = MEDissThres, verbose = 3)
-mergedColors = merge$colors
-mergedMEs = merge$newMEs
-plotDendroAndColors(geneTree, mergedColors,"Dynamic Tree Cut",
-                    dendroLabels = FALSE, hang = 0.03,
-                    addGuide = TRUE, guideHang = 0.05,
-                    main = "Gene dendrogram and module colors")
+#merge = mergeCloseModules(datExpr0, dynamicColors, cutHeight = MEDissThres, verbose = 3)
+#mergedColors = merge$colors
+#mergedMEs = merge$newMEs
+#plotDendroAndColors(geneTree, mergedColors,"Dynamic Tree Cut",
+#                    dendroLabels = FALSE, hang = 0.03,
+#                    addGuide = TRUE, guideHang = 0.05,
+#                    main = "Gene dendrogram and module colors")
 
-moduleColors = mergedColors
-table(moduleColors)
-colorOrder = c("grey", standardColors(50))
-moduleLabels = match(moduleColors, colorOrder)-1
-MEs = mergedMEs
-dev.off()
+#moduleColors = mergedColors
+##table(moduleColors)
+#colorOrder = c("grey", standardColors(50))
+#moduleLabels = match(moduleColors, colorOrder)-1
+#MEs = mergedMEs
+#dev.off()
+#### 计算免疫评分 ####
+install.packages("utils")
+rforge <- "http://r-forge.r-project.org"
+install.packages("estimate", repos=rforge, dependencies=TRUE)
+library(estimate)
+#读取肿瘤患者01A表达谱
+expr <- read.table("expr_limma.csv",sep = "\t",row.names = 1,check.names = F,stringsAsFactors = F,header = T)
+
+
+#计算免疫评分
+filterCommonGenes(input.f = "expr_limma.csv",   #输入文件名
+                  output.f = "LIHC_fpkm_mRNA_01A.gct",   #输出文件名
+                  id = "GeneSymbol")   #行名为gene symbol
+estimateScore("LIHC_fpkm_mRNA_01A.gct",   #刚才的输出文件名
+              "LIHC_fpkm_mRNA_01A_estimate_score.txt",   #新的输出文件名（即估计的结果文件）
+              platform="affymetrix")   #默认平台
+
+#3. 输出每个样品的打分
+result <- read.table("LIHC_fpkm_mRNA_01A_estimate_score.txt",sep = "\t",row.names = 1,check.names = F,stringsAsFactors = F,header = T)
+result <- result[,-1]   
+colnames(result) <- result[1,]   
+result <- as.data.frame(t(result[-1,]))
+
+rownames(result) <- colnames(expr)
+write.table(result, file = "LIHC_fpkm_mRNA_01A_estimate_score.txt",sep = "\t",row.names = T,col.names = NA,quote = F) # 保存并覆盖得分
+
+
 # 整理临床信息
 clinical <- read.table("LIHC_fpkm_mRNA_01A_estimate_score.txt",sep = "\t",row.names = 1,check.names = F,stringsAsFactors = F,header = T)
 clinical <- clinical[rownames(datExpr0),]
@@ -450,7 +479,6 @@ labeledHeatmap(Matrix=moduleTraitCor,#模块和表型的相关性矩阵，这个
                zlim=c(-1,1),
                main=paste("Module-trait relationships"))
 dev.off()
-
 # 不同模块与基因性状的具体分析
 ##矩阵一
 modNames = substring(names(MEs), 3)
@@ -501,10 +529,4 @@ for (mod in 1:nrow(table(moduleColors)))
   modGenes = probes[inModule]
   write.table(modGenes, file =paste0(modules,".txt"),sep="\t",row.names=F,col.names=F,quote=F)
 }
-
-
-
-
-
-
-
+write.table(a, file = "to_string.csv",sep="\t",row.names=F,col.names=F,quote=F)
