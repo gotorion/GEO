@@ -349,7 +349,7 @@ text(sft$fitIndices[,1], sft$fitIndices[,5], labels=powers, cex=cex1,col="red")
 ##6.2 邻接矩阵转换
 sft #查看最佳power值
 softPower =sft$powerEstimate #最佳power值
-softPower = 1
+softPower = 6
 adjacency = adjacency(datExpr0, power = softPower)
 
 ##6.3 TOM矩阵
@@ -530,3 +530,57 @@ for (mod in 1:nrow(table(moduleColors)))
   write.table(modGenes, file =paste0(modules,".txt"),sep="\t",row.names=F,col.names=F,quote=F)
 }
 write.table(a, file = "to_string.csv",sep="\t",row.names=F,col.names=F,quote=F)
+
+#### ROC ####
+#准备R包
+install.packages("ROCR")
+install.packages("rms")
+library(ROCR)
+library(rms)
+roc_key_genes <- read.table("roc_key_genes.csv", sep = ",", row.names = 1, check.names = F, stringsAsFactors = F, header = T)
+roc_attribute <- read.table("roc_attribute.csv", sep = ",", row.names = 1, check.names = F, stringsAsFactors = F, header = T)
+x <- unlist(roc_key_genes$`False Positive Rate`)
+y <- unlist(roc_key_genes$`True Positive Rate`)
+plotdata <- data.frame(x, y)
+names(plotdata) <- c("x", "y")
+
+m <- unlist(roc_attribute$`False Positive Rate`)
+n <- unlist(roc_attribute$`True Positive Rate`)
+plotdata1 <- data.frame(m, n)
+names(plotdata1) <- c("m", "n")
+
+library(ggplot2)
+g <- ggplot(plotdata) + 
+  geom_path(aes(x = x, y = y, colour = x), linewidth = 1) +
+  labs(x = "False Positive Rate", y = "Sensitivity", title = "ROC curve for key genes") +
+  scale_color_gradient(name = "False Positive Rate", low = 'blue', high = 'red') +
+  theme(plot.title = element_text(face = 'bold', size = 15))+
+  annotate("text", x = 0.6, y = 0.8, label = "AUC = 0.943", size = 5)
+  
+g2 <- ggplot(plotdata1) + 
+  geom_path(aes(m,n, colour = m), linewidth = 1) +
+  labs(x = "False Positive Rate", y = "Sensitivity", title = "ROC curve for filter result") +
+  scale_color_gradient(name = "False Positive Rate", low = 'blue', high = 'red') +
+  theme(plot.title = element_text(face = 'bold', size = 15))+
+  annotate("text", x = 0.6, y = 0.8, label = "AUC = 0.950", size = 5)
+
+g
+g2
+dev.off()
+#1.4 绘制ROC曲线
+
+AUC <- 0.943
+
+plot(roc_key_genes$`False Positive Rate`,roc_key_genes$`True Positive Rate`,
+     col="red",   #曲线的颜色
+     xlab="False positive rate", ylab="True positive rate",   #x轴和y轴的名称
+     lty=1,lwd=2,
+     main=paste("AUC=",AUC))
+abline(0, 1, lty=2, lwd=2)   #绘制对角线
+legend(0.60, 0.10,
+       c("AUC = 0.943"),
+       lty = 1,
+       lwd = 2,
+       col = 'red',
+       bty = 'o')
+dev.off()
